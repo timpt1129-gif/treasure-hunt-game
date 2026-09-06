@@ -6,6 +6,8 @@ import treasureChest from './assets/treasure_opened.png';
 import skeletonChest from './assets/treasure_opened_skeleton.png';
 import chestOpenSound from './audios/chest_open.mp3';
 import evilLaughSound from './audios/chest_open_with_evil_laugh.mp3';
+import klaLogo from './assets/kla_logo.png';
+import keyIcon from './assets/key.png';
 
 interface Box {
   id: number;
@@ -72,7 +74,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8">
+    <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8 relative">
       <div className="text-center mb-8">
         <h1 className="text-4xl mb-4 text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
         <p className="text-amber-800 mb-4">
@@ -113,7 +115,8 @@ export default function App() {
             {boxes.map((box) => (
               <motion.div
                 key={box.id}
-                className="flex flex-col items-center cursor-pointer"
+                className="flex flex-col items-center"
+                style={{ cursor: box.isOpen ? 'default' : `url(${keyIcon}) 16 16, pointer` }}
                 whileHover={{ scale: box.isOpen ? 1 : 1.05 }}
                 whileTap={{ scale: box.isOpen ? 1 : 0.95 }}
                 onClick={() => openBox(box.id)}
@@ -211,6 +214,24 @@ export default function App() {
               </Button>
             </motion.div>
           )}
+
+      <motion.img
+        src={klaLogo}
+        alt="KLA Logo"
+        className="fixed w-48 h-48 object-contain rounded-lg opacity-30 pointer-events-none"
+        style={{ bottom: '10%', right: '5%' }}
+        animate={{
+          x: [0, 100, -80, 60, -40, 0],
+          y: [0, -60, 40, -80, 20, 0],
+          rotate: [0, 10, -10, 5, -5, 0],
+          scale: [1, 1.1, 0.95, 1.05, 0.98, 1],
+        }}
+        transition={{
+          duration: 20,
+          repeat: Infinity,
+          ease: 'easeInOut',
+        }}
+      />
     </div>
   );
 }
