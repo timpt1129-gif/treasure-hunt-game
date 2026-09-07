@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Button } from './components/ui/button';
+import AuthPage from './components/AuthPage';
+import ScoreHistory from './components/ScoreHistory';
+import GameEndAnimation from './components/GameEndAnimation';
 import closedChest from './assets/treasure_closed.png';
 import treasureChest from './assets/treasure_opened.png';
 import skeletonChest from './assets/treasure_opened_skeleton.png';
@@ -16,28 +19,82 @@ interface Box {
 }
 
 export default function App() {
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
+  const [isGuest, setIsGuest] = useState(false);
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [score, setScore] = useState(0);
   const [gameEnded, setGameEnded] = useState(false);
+  const [scoreSaved, setScoreSaved] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const isAuthenticated = !!token;
+  const showGame = isAuthenticated || isGuest;
+
+  const logoRef = useRef<HTMLImageElement>(null);
+  const posRef = useRef({ x: 100, y: 100, dx: 2, dy: 1.5 });
+
+  const animateLogo = useCallback(() => {
+    const el = logoRef.current;
+    if (!el) return;
+    const p = posRef.current;
+    const w = window.innerWidth - el.offsetWidth;
+    const h = window.innerHeight - el.offsetHeight;
+
+    p.x += p.dx;
+    p.y += p.dy;
+
+    if (p.x <= 0) { p.x = 0; p.dx = Math.abs(p.dx); }
+    if (p.x >= w) { p.x = w; p.dx = -Math.abs(p.dx); }
+    if (p.y <= 0) { p.y = 0; p.dy = Math.abs(p.dy); }
+    if (p.y >= h) { p.y = h; p.dy = -Math.abs(p.dy); }
+
+    el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    requestAnimationFrame(animateLogo);
+  }, []);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(animateLogo);
+    return () => cancelAnimationFrame(id);
+  }, [animateLogo]);
 
   const initializeGame = () => {
-    // Randomly assign treasure to one box
     const treasureBoxIndex = Math.floor(Math.random() * 3);
     const newBoxes: Box[] = Array.from({ length: 3 }, (_, index) => ({
       id: index,
       isOpen: false,
       hasTreasure: index === treasureBoxIndex,
     }));
-    
     setBoxes(newBoxes);
     setScore(0);
     setGameEnded(false);
+    setScoreSaved(false);
   };
 
-  // Initialize game automatically when component mounts
   useEffect(() => {
-    initializeGame();
-  }, []);
+    if (showGame) initializeGame();
+  }, [showGame]);
+
+  // Save score when game ends for authenticated users
+  useEffect(() => {
+    if (!gameEnded || !token || scoreSaved) return;
+    const result = score > 0 ? 'Win' : score < 0 ? 'Loss' : 'Tie';
+    fetch('/api/scores', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ score, result }),
+    })
+      .then(res => {
+        if (res.ok) {
+          setScoreSaved(true);
+          setRefreshKey(k => k + 1);
+        }
+      })
+      .catch(() => {});
+  }, [gameEnded, token, score, scoreSaved]);
 
   const openBox = (boxId: number) => {
     if (gameEnded) return;
@@ -57,28 +114,57 @@ export default function App() {
         }
         return box;
       });
-      
-      // Check if treasure is found or all boxes are opened
+
       const treasureFound = updatedBoxes.some(box => box.isOpen && box.hasTreasure);
-      const allOpened = updatedBoxes.every(box => box.isOpen);
-      if (treasureFound || allOpened) {
+      const openedCount = updatedBoxes.filter(box => box.isOpen).length;
+      if (treasureFound || openedCount >= 2) {
         setGameEnded(true);
       }
-      
+
       return updatedBoxes;
     });
   };
 
-  const resetGame = () => {
-    initializeGame();
+  const handleAuth = (newToken: string, newUsername: string) => {
+    setToken(newToken);
+    setUsername(newUsername);
+    setIsGuest(false);
   };
 
+  const handleSignOut = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    setToken(null);
+    setUsername(null);
+    setIsGuest(false);
+    setGameEnded(false);
+  };
+
+  if (!showGame) {
+    return <AuthPage onAuth={handleAuth} onGuest={() => setIsGuest(true)} />;
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8 relative">
+    <div className="min-h-screen bg-blue-500 flex flex-col items-center justify-center p-8 relative">
+      {/* Header bar with user info */}
+      <div className="absolute top-4 right-4 flex items-center gap-3">
+        {isGuest ? (
+          <span className="text-sm text-amber-600">Playing as Guest</span>
+        ) : (
+          <span className="text-sm text-amber-800">👤 {username}</span>
+        )}
+        <Button
+          onClick={handleSignOut}
+          className="text-xs px-3 py-1 bg-amber-200 hover:bg-amber-300 text-amber-800 border border-amber-400"
+        >
+          {isGuest ? 'Sign In' : 'Sign Out'}
+        </Button>
+      </div>
+
       <div className="text-center mb-8">
         <h1 className="text-4xl mb-4 text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
         <p className="text-amber-800 mb-4">
-          Click on the treasure chests to discover what's inside!
+          Pick 2 of the 3 treasure chests to open!
         </p>
         <p className="text-amber-700 text-sm">
           💰 Treasure: +$100 | 💀 Skeleton: -$50
@@ -123,28 +209,28 @@ export default function App() {
               >
                 <motion.div
                   initial={{ rotateY: 0 }}
-                  animate={{ 
+                  animate={{
                     rotateY: box.isOpen ? 180 : 0,
                     scale: box.isOpen ? 1.1 : 1
                   }}
-                  transition={{ 
+                  transition={{
                     duration: 0.6,
                     ease: "easeInOut"
                   }}
                   className="relative"
                 >
                   <img
-                    src={box.isOpen 
+                    src={box.isOpen
                       ? (box.hasTreasure ? treasureChest : skeletonChest)
                       : closedChest
                     }
-                    alt={box.isOpen 
+                    alt={box.isOpen
                       ? (box.hasTreasure ? "Treasure!" : "Skeleton!")
                       : "Treasure Chest"
                     }
                     className="w-48 h-48 object-contain drop-shadow-lg"
                   />
-                  
+
                   {box.isOpen && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
@@ -160,7 +246,7 @@ export default function App() {
                     </motion.div>
                   )}
                 </motion.div>
-                
+
                 <div className="mt-4 text-center">
                   {box.isOpen ? (
                     <motion.div
@@ -168,8 +254,8 @@ export default function App() {
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: 0.4, duration: 0.3 }}
                       className={`text-lg p-2 rounded-lg ${
-                        box.hasTreasure 
-                          ? 'bg-green-100 text-green-800 border border-green-300' 
+                        box.hasTreasure
+                          ? 'bg-green-100 text-green-800 border border-green-300'
                           : 'bg-red-100 text-red-800 border border-red-300'
                       }`}
                     >
@@ -200,14 +286,24 @@ export default function App() {
                   </span>
                 </p>
                 <p className="text-sm text-amber-600 mt-2">
-                  {boxes.some(box => box.isOpen && box.hasTreasure) 
-                    ? 'Treasure found! Well done, treasure hunter! 🎉' 
+                  {boxes.some(box => box.isOpen && box.hasTreasure)
+                    ? 'Treasure found! Well done, treasure hunter! 🎉'
                     : 'No treasure found this time! Better luck next time! 💀'}
                 </p>
+                {isGuest && (
+                  <p className="text-xs text-amber-500 mt-2">
+                    Sign in to save your scores!
+                  </p>
+                )}
+                {isAuthenticated && scoreSaved && (
+                  <p className="text-xs text-green-600 mt-2">
+                    ✓ Score saved
+                  </p>
+                )}
               </div>
-              
-              <Button 
-                onClick={resetGame}
+
+              <Button
+                onClick={initializeGame}
                 className="text-lg px-8 py-4 bg-amber-600 hover:bg-amber-700 text-white"
               >
                 Play Again
@@ -215,22 +311,20 @@ export default function App() {
             </motion.div>
           )}
 
-      <motion.img
+      {isAuthenticated && (
+        <ScoreHistory token={token!} refreshKey={refreshKey} />
+      )}
+
+      {gameEnded && (
+        <GameEndAnimation result={score > 0 ? 'win' : score < 0 ? 'loss' : 'tie'} />
+      )}
+
+      <img
+        ref={logoRef}
         src={klaLogo}
         alt="KLA Logo"
-        className="fixed w-48 h-48 object-contain rounded-lg opacity-30 pointer-events-none"
-        style={{ bottom: '10%', right: '5%' }}
-        animate={{
-          x: [0, 100, -80, 60, -40, 0],
-          y: [0, -60, 40, -80, 20, 0],
-          rotate: [0, 10, -10, 5, -5, 0],
-          scale: [1, 1.1, 0.95, 1.05, 0.98, 1],
-        }}
-        transition={{
-          duration: 20,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+        className="fixed top-0 left-0 w-48 h-48 object-contain rounded-lg pointer-events-none"
+        style={{ opacity: 0.5 }}
       />
     </div>
   );
